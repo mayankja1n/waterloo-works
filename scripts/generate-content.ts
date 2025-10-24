@@ -1,0 +1,280 @@
+import { PrismaClient } from "@prisma/client";
+import fs from "fs/promises";
+import path from "path";
+
+const prisma = new PrismaClient();
+
+function slugify(text: string): string {
+	return text
+		.toLowerCase()
+		.replace(/[^\w\s-]/g, "")
+		.replace(/[\s_-]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+}
+
+function formatSalary(min?: string | null, max?: string | null): string {
+	if (!min && !max) return "Not specified";
+	if (min && max) return `$${min} - $${max}`;
+	if (min) return `From $${min}`;
+	if (max) return `Up to $${max}`;
+	return "Not specified";
+}
+
+function formatEmploymentType(type: string): string {
+	const map: Record<string, string> = {
+		FULL_TIME: "Full-time",
+		PART_TIME: "Part-time",
+		CONTRACT: "Contract",
+		INTERNSHIP: "Internship",
+		OTHER: "Other",
+	};
+	return map[type] || type;
+}
+
+async function generateJobMarkdown() {
+    console.log("📝 Generating job markdown files...");
+    let jobs: any[] = [];
+    try {
+        jobs = await prisma.job.findMany({
+            where: { status: "APPROVED" },
+            orderBy: { createdAt: "desc" },
+        });
+    } catch (err) {
+        console.warn(
+            "⚠️  Skipping job markdown generation – database not reachable.",
+            (err as Error)?.message || err
+        );
+        return [];
+    }
+
+	const jobsDir = path.join(process.cwd(), "content/jobs");
+	await fs.mkdir(jobsDir, { recursive: true });
+
+	for (const job of jobs) {
+		// Create SEO-friendly slug: position-company-location
+		const slug = slugify(
+			`${job.position}-${job.company}-${job.location}`
+		);
+
+		const content = `---
+slug: "${slug}"
+title: "${job.position}"
+company: "${job.company}"
+companyUrl: ${job.companyUrl ? `"${job.companyUrl}"` : "null"}
+companyImageUrl: ${job.companyImageUrl ? `"${job.companyImageUrl}"` : "null"}
+location: "${job.location}"
+employmentType: "${job.employmentType}"
+salaryMin: ${job.salaryMin ? `"${job.salaryMin}"` : "null"}
+salaryMax: ${job.salaryMax ? `"${job.salaryMax}"` : "null"}
+contact: "${job.contact}"
+contactUrl: ${job.contactUrl ? `"${job.contactUrl}"` : "null"}
+postedAt: "${job.createdAt.toISOString()}"
+updatedAt: "${job.updatedAt.toISOString()}"
+---
+
+# ${job.position} at ${job.company}
+
+**Location:** ${job.location}
+**Employment Type:** ${formatEmploymentType(job.employmentType)}
+**Salary:** ${formatSalary(job.salaryMin, job.salaryMax)}
+
+## About the Role
+
+${job.notes || "No additional details provided."}
+
+## Contact
+
+**${job.contact}**${job.contactUrl ? `  \n**Apply:** [${job.contactUrl}](${job.contactUrl})` : ""}
+`;
+
+		const filename = `${slug}.md`;
+		await fs.writeFile(path.join(jobsDir, filename), content, "utf-8");
+	}
+
+	console.log(`✅ Generated ${jobs.length} job markdown files`);
+	return jobs;
+}
+
+async function generateCompanyMarkdown(jobs: any[]) {
+	console.log("🏢 Generating company markdown files...");
+
+	// Group jobs by company
+	const companiesMap = new Map<string, any[]>();
+	for (const job of jobs) {
+		const companyKey = job.company.toLowerCase();
+		if (!companiesMap.has(companyKey)) {
+			companiesMap.set(companyKey, []);
+		}
+		companiesMap.get(companyKey)!.push(job);
+	}
+
+	const companiesDir = path.join(process.cwd(), "content/companies");
+	await fs.mkdir(companiesDir, { recursive: true });
+
+	for (const [companyKey, companyJobs] of companiesMap.entries()) {
+		const company = companyJobs[0]; // Use first job for company info
+		const slug = slugify(company.company);
+		const jobCount = companyJobs.length;
+		const latestJob = companyJobs[0]; // Already sorted by createdAt desc
+
+		const jobsList = companyJobs
+			.map(
+				(job) =>
+					`- **${job.position}** (${job.location}) - ${formatEmploymentType(job.employmentType)}`
+			)
+			.join("\n");
+
+		const content = `---
+name: "${company.company}"
+slug: "${slug}"
+companyUrl: ${company.companyUrl ? `"${company.companyUrl}"` : "null"}
+companyImageUrl: ${company.companyImageUrl ? `"${company.companyImageUrl}"` : "null"}
+jobCount: ${jobCount}
+latestJobDate: "${latestJob.createdAt.toISOString()}"
+---
+
+# ${company.company}
+
+**Website:** ${company.companyUrl ? `[${company.companyUrl}](${company.companyUrl})` : "Not available"}
+**Active Openings:** ${jobCount}
+
+## Current Openings
+
+${jobsList}
+
+---
+
+*Last updated: ${new Date().toLocaleDateString()}*
+`;
+
+		const filename = `${slug}.md`;
+		await fs.writeFile(path.join(companiesDir, filename), content, "utf-8");
+	}
+
+	console.log(`✅ Generated ${companiesMap.size} company markdown files`);
+}
+
+async function generateBlogMarkdown() {
+    console.log("📝 Generating blog markdown files...");
+    let blogs: any[] = [];
+    try {
+        blogs = await prisma.blog.findMany({
+            where: { published: true },
+            orderBy: { publishedAt: "desc" },
+        });
+    } catch (err) {
+        console.warn(
+            "⚠️  Skipping blog markdown generation – database not reachable.",
+            (err as Error)?.message || err
+        );
+        return [];
+    }
+
+	const blogsDir = path.join(process.cwd(), "content/blogs");
+	await fs.mkdir(blogsDir, { recursive: true });
+
+	for (const blog of blogs) {
+		const content = `---
+slug: "${blog.slug}"
+title: "${blog.title}"
+excerpt: ${blog.excerpt ? `"${blog.excerpt.replace(/"/g, '\\"')}"` : "null"}
+author: ${blog.author ? `"${blog.author}"` : "null"}
+tags: ${JSON.stringify(blog.tags)}
+coverImage: ${blog.coverImage ? `"${blog.coverImage}"` : "null"}
+publishedAt: "${blog.publishedAt?.toISOString() || blog.createdAt.toISOString()}"
+updatedAt: "${blog.updatedAt.toISOString()}"
+---
+
+${blog.content}
+`;
+
+		const filename = `${blog.slug}.md`;
+		await fs.writeFile(path.join(blogsDir, filename), content, "utf-8");
+	}
+
+	console.log(`✅ Generated ${blogs.length} blog markdown files`);
+	return blogs;
+}
+
+async function generateResourceMarkdown() {
+    console.log("🔗 Generating resource markdown files...");
+    let resources: any[] = [];
+    try {
+        resources = await prisma.resource.findMany({
+            where: { published: true },
+            orderBy: { publishedAt: "desc" },
+        });
+    } catch (err) {
+        console.warn(
+            "⚠️  Skipping resource markdown generation – database not reachable.",
+            (err as Error)?.message || err
+        );
+        return [];
+    }
+
+	const resourcesDir = path.join(process.cwd(), "content/resources");
+	await fs.mkdir(resourcesDir, { recursive: true });
+
+	for (const resource of resources) {
+		const content = `---
+slug: "${resource.slug}"
+name: "${resource.name}"
+url: "${resource.url}"
+description: "${resource.description.replace(/"/g, '\\"')}"
+logo: ${resource.logo ? `"${resource.logo}"` : "null"}
+category: "${resource.category}"
+tags: ${JSON.stringify(resource.tags)}
+verified: ${resource.verified}
+publishedAt: "${resource.publishedAt?.toISOString() || resource.createdAt.toISOString()}"
+updatedAt: "${resource.updatedAt.toISOString()}"
+---
+
+# ${resource.name}
+
+**Category:** ${resource.category}
+**Website:** [${resource.url}](${resource.url})
+
+## About
+
+${resource.description}
+
+${resource.content || ""}
+
+---
+
+*${resource.verified ? "✓ Verified Resource" : "Community Submitted"}*
+`;
+
+		const filename = `${resource.slug}.md`;
+		await fs.writeFile(path.join(resourcesDir, filename), content, "utf-8");
+	}
+
+	console.log(`✅ Generated ${resources.length} resource markdown files`);
+	return resources;
+}
+
+async function main() {
+    try {
+        console.log("🚀 Starting content generation from database...\n");
+
+        // Generate job markdown files (tolerate failures)
+        const jobs = await generateJobMarkdown();
+
+        // Generate company markdown files (no-op if `jobs` empty)
+        await generateCompanyMarkdown(jobs);
+
+        // Generate blog markdown files (tolerate failures)
+        await generateBlogMarkdown();
+
+        // Generate resource markdown files (tolerate failures)
+        await generateResourceMarkdown();
+
+        console.log("\n✨ Content generation finished (best-effort mode).\n");
+    } catch (error) {
+        console.warn("⚠️  Content generation encountered an error but will not fail the build:", error);
+    } finally {
+        await prisma.$disconnect();
+    }
+}
+
+main();

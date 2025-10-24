@@ -1,7 +1,10 @@
 import Link from "next/link";
+import Image from "next/image";
+import GridOverlay from "@/components/ui/GridOverlay";
 import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
 import Footer from "@/components/Footer";
+import HeaderLanding from "@/components/HeaderLanding";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -12,88 +15,65 @@ export default async function Home() {
   if (user) redirect("/explore");
 
   return (
-    <div className="min-h-screen bg-white">
-      <header className="px-6 py-5 border-b border-zinc-200">
-        <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <Link href="/" className="text-xl font-serif italic text-zinc-900">
-            waterloo[dot]works
-          </Link>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/login"
-              className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-800"
-            >
-              Sign in
-            </Link>
+    <div className="dark min-h-screen bg-black">
+
+      <main>
+      <HeaderLanding />
+        {/* Hero: layered background (image + gradient) with centered content */}
+        <section className="relative min-h-screen overflow-hidden">
+          {/* Layer 1: Background image */}
+          <Image
+            src="/hero.png"
+            alt="Waterloo goose illustration background"
+            fill
+            priority
+            className="absolute inset-0 z-0 object-cover opacity-60"
+          />
+          {/* Layer 2: Gradient overlay (mid → dark) */}
+          <div className="absolute inset-0 z-0 bg-gradient-to-b from-slate-900/50 via-slate-900/70 to-black/90" />
+
+          {/* Layer 2.5: Top lightening wash to lift contrast near the header */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-40 md:h-48 z-10 bg-gradient-to-b from-white/30 via-white/10 to-transparent" />
+
+          {/* Pendulum shimmer (loops) under grid; pivot at top for stronger bottom motion */}
+          <div className="absolute inset-0 z-[12] pointer-events-none overflow-hidden">
+            <div className="ww-pendulum ww-pendulum--force ww-pendulum--flip" style={{ ['--pendulum-duration' as any]: '9s', opacity: 0.45 }} />
+            <div className="ww-pendulum ww-pendulum--force ww-pendulum--flip" style={{ ['--pendulum-duration' as any]: '13s', opacity: 0.25, ['--pendulum-from' as any]: '-12deg', ['--pendulum-to' as any]: '12deg' }} />
           </div>
-        </div>
-      </header>
 
-      <main className="mx-auto max-w-4xl px-6 py-20 md:py-28">
-        <h1 className="mb-2 font-title text-4xl font-semibold tracking-tight text-zinc-900 md:text-5xl">
-          Curated opportunities for alum
-        </h1>
-        
-        <p className="font-body text-lg text-zinc-700 md:text-xl mt-2 md:mt-3 mb-8 md:mb-10 leading-7 md:leading-8 max-w-3xl">
-          Alum can post opportunities, apply, or forward roles to people who actually want them.
-        </p>
+          {/* Decorative side rails only, to frame content */}
+          <GridOverlay
+            className="z-20"
+            fullHeight
+            variant="sides"
+            showTopTicks
+            showBottomTicks
+            showNodes
+            showBottomNodes
+            style={{ ['--ticks-top-offset' as any]: '66px', ['--hairline-top' as any]: '64px', ['--hairline-bottom' as any]: '8px' }}
+          />
 
-        {/* Junh-style choice cards */}
-        <section className="mt-12">
-          <div className="grid gap-5 md:grid-cols-2">
-            <Link
-              href="/explore"
-              className="group rounded-3xl bg-zinc-50 text-zinc-900 p-8 sm:p-10 shadow-sm ring-1 ring-zinc-200 transition-all hover:-translate-y-0.5 hover:shadow-md hover:bg-zinc-100"
-            >
-              <div className="font-body text-sm/6 text-zinc-600">Alum</div>
-              <div className="mt-2 font-title text-2xl sm:text-3xl font-semibold tracking-tight">
-                Find your next job
-              </div>
-              <div className="mt-6 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-zinc-800 ring-1 ring-zinc-200 group-hover:bg-zinc-50">
-                <span>↗</span>
-                <span>Explore jobs</span>
-              </div>
-            </Link>
+          {/* Layer 3: Content */}
+          <div className="relative z-30 mx-auto flex min-h-svh max-w-4xl flex-col items-center justify-center px-4 md:px-6 text-center">
+            <h2 className="font-header text-[2.25rem] md:text-h2 tracking-tight-04 leading-heading mb-3 text-white">
+              Matching cracked canadians to companies ready to match their ambition. Starting with UWaterloo
+            </h2>
 
-            <Link
-              href="/post-job"
-              className="group rounded-3xl bg-zinc-50 text-zinc-900 p-8 sm:p-10 shadow-sm ring-1 ring-zinc-200 transition-all hover:-translate-y-0.5 hover:shadow-md hover:bg-zinc-100"
-            >
-              <div className="font-body text-sm/6 text-zinc-600">Employers</div>
-              <div className="mt-2 font-title text-2xl sm:text-3xl font-semibold tracking-tight">
-                Hire top talent
-              </div>
-              <div className="mt-6 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-zinc-800 ring-1 ring-zinc-200 group-hover:bg-zinc-50">
-                <span>✏️</span>
-                <span>Post a job</span>
-              </div>
-            </Link>
-          </div>
-        </section>
-
-        <section className="mt-24 space-y-10">
-          <h2 className="font-title text-2xl font-semibold text-zinc-900">How it works</h2>
-          <div className="grid gap-8 md:grid-cols-3">
-            <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm transition-all hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-md focus-within:ring-1 focus-within:ring-zinc-300">
-              <h3 className="font-title text-lg font-semibold text-zinc-900">Discover</h3>
-              <p className="font-body mt-2 text-zinc-700">
-                Browse jobs posted by other alum.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm transition-all hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-md focus-within:ring-1 focus-within:ring-zinc-300">
-              <h3 className="font-title text-lg font-semibold text-zinc-900">Apply</h3>
-              <p className="font-body mt-2 text-zinc-700">See a fit? Click apply.</p>
-            </div>
-            <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm transition-all hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-md focus-within:ring-1 focus-within:ring-zinc-300">
-              <h3 className="font-title text-lg font-semibold text-zinc-900">Share</h3>
-              <p className="font-body mt-2 text-zinc-700">
-                Forward roles to people you know who’d want them.
-              </p>
+            {/* Single CTA pill — responsive sizes, no card behind */}
+            <div className="w-full flex items-center justify-center mt-8 md:mt-10">
+              <Link
+                href="/explore"
+                className="rounded-full bg-primary text-primary-foreground px-5 py-2 text-sm shadow hover:bg-primary/90 md:px-8 md:py-4 md:text-lg"
+              >
+                Explore jobs.
+              </Link>
             </div>
           </div>
         </section>
+
+       
       </main>
-      <Footer />
+      <Footer tone="dark" />
     </div>
   );
 }

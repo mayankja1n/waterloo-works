@@ -1,0 +1,154 @@
+import { readFileSync } from "fs";
+import { join } from "path";
+
+const INDEXNOW_KEY = "c2625de7b6514de28e9ed33e320098e9";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://waterloo.app";
+
+// IndexNow API endpoints (can submit to any, they share the index)
+const INDEXNOW_ENDPOINTS = [
+	"https://api.indexnow.org/indexnow",
+	"https://www.bing.com/indexnow",
+	"https://yandex.com/indexnow",
+];
+
+interface SubmitUrlsOptions {
+	urls: string[];
+	endpoint?: string;
+}
+
+async function submitToIndexNow({ urls, endpoint = INDEXNOW_ENDPOINTS[0] }: SubmitUrlsOptions) {
+	console.log(`\n📡 Submitting ${urls.length} URLs to IndexNow...`);
+	console.log(`Endpoint: ${endpoint}\n`);
+
+	const body = {
+		host: new URL(SITE_URL).hostname,
+		key: INDEXNOW_KEY,
+		keyLocation: `${SITE_URL}/${INDEXNOW_KEY}.txt`,
+		urlList: urls,
+	};
+
+	console.log("Request body:");
+	console.log(`  Host: ${body.host}`);
+	console.log(`  Key: ${body.key}`);
+	console.log(`  Key Location: ${body.keyLocation}`);
+	console.log(`  URLs Count: ${body.urlList.length}`);
+	console.log("\nFirst 5 URLs being submitted:");
+	urls.slice(0, 5).forEach((url, i) => console.log(`  ${i + 1}. ${url}`));
+	if (urls.length > 5) {
+		console.log(`  ... and ${urls.length - 5} more\n`);
+	}
+
+	try {
+		const response = await fetch(endpoint, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json; charset=utf-8",
+			},
+			body: JSON.stringify(body),
+		});
+
+		console.log(`\nResponse Status: ${response.status} ${response.statusText}`);
+
+		if (response.ok || response.status === 202) {
+			console.log("✅ Successfully submitted URLs to IndexNow");
+
+			// 200 OK = URLs received and will be processed
+			// 202 Accepted = URLs received and queued for processing (most common)
+			if (response.status === 202) {
+				console.log("   Status 202 means URLs were accepted and queued for crawling");
+			}
+
+			return true;
+		} else {
+			const text = await response.text();
+			console.error("❌ Failed to submit URLs");
+			console.error(`Response: ${text}`);
+
+			// Common error codes
+			if (response.status === 400) {
+				console.error("   Error 400: Bad Request - Check URL format and key location");
+			} else if (response.status === 403) {
+				console.error("   Error 403: Forbidden - Verify key file is accessible");
+			} else if (response.status === 422) {
+				console.error("   Error 422: Unprocessable - Invalid URL format or host mismatch");
+			}
+
+			return false;
+		}
+	} catch (error) {
+		console.error("❌ Error submitting to IndexNow:", error);
+		return false;
+	}
+}
+
+async function getUrlsFromSitemap(): Promise<string[]> {
+	console.log("📄 Reading sitemap...");
+
+	try {
+		// Fetch the sitemap from the site
+		const sitemapUrl = `${SITE_URL}/sitemap.xml`;
+		const response = await fetch(sitemapUrl);
+
+		if (!response.ok) {
+			throw new Error(`Failed to fetch sitemap: ${response.statusText}`);
+		}
+
+		const xml = await response.text();
+
+		// Extract URLs from sitemap XML
+		const urlMatches = xml.matchAll(/<loc>(.*?)<\/loc>/g);
+		const urls = Array.from(urlMatches, (match) => match[1]);
+
+		console.log(`✅ Found ${urls.length} URLs in sitemap\n`);
+		return urls;
+	} catch (error) {
+		console.error("❌ Error reading sitemap:", error);
+		throw error;
+	}
+}
+
+async function main() {
+	console.log("🚀 IndexNow URL Submission Script");
+	console.log(`Site: ${SITE_URL}`);
+	console.log(`Key: ${INDEXNOW_KEY}`);
+	console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+	try {
+		// Get URLs from sitemap
+		const urls = await getUrlsFromSitemap();
+
+		if (urls.length === 0) {
+			console.log("⚠️  No URLs found in sitemap");
+			return;
+		}
+
+		// IndexNow has a limit of 10,000 URLs per request
+		// For most sites, we can submit all at once
+		if (urls.length <= 10000) {
+			await submitToIndexNow({ urls });
+		} else {
+			// Batch into chunks of 10,000
+			console.log(`⚠️  Found ${urls.length} URLs, will submit in batches of 10,000`);
+			for (let i = 0; i < urls.length; i += 10000) {
+				const batch = urls.slice(i, i + 10000);
+				console.log(`\nBatch ${Math.floor(i / 10000) + 1}:`);
+				await submitToIndexNow({ urls: batch });
+			}
+		}
+
+		console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+		console.log("✨ Done! Your URLs have been submitted to IndexNow");
+		console.log("\n📝 Next steps:");
+		console.log("1. Verify the key file is accessible:");
+		console.log(`   ${SITE_URL}/${INDEXNOW_KEY}.txt`);
+		console.log("2. Submit sitemap to Google Search Console:");
+		console.log("   https://search.google.com/search-console");
+		console.log("3. Submit sitemap to Bing Webmaster Tools:");
+		console.log("   https://www.bing.com/webmasters");
+	} catch (error) {
+		console.error("\n❌ Script failed:", error);
+		process.exit(1);
+	}
+}
+
+main();

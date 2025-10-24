@@ -2,6 +2,7 @@ import Link from "next/link";
 import HeaderMinimal from "@/components/HeaderMinimal";
 
 export const metadata = { title: "Not Found" };
+export const dynamic = "force-dynamic";
 
 export default function NotFound() {
   return (
@@ -9,10 +10,8 @@ export default function NotFound() {
       <HeaderMinimal />
       <main className="mx-auto max-w-3xl px-6 py-20 text-center">
         <div className="mx-auto mb-6 inline-flex h-16 w-16 items-center justify-center rounded-full bg-zinc-100" />
-        <h1 className="font-title text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900">
-          Page not found
-        </h1>
-        <p className="font-body mx-auto mt-3 max-w-xl text-zinc-600">
+        <h2 className="font-header text-h2 tracking-tight-04 leading-heading text-zinc-900">Page not found</h2>
+        <p className="font-body tracking-wide-01 leading-body mx-auto mt-3 max-w-xl text-zinc-600">
           The page you’re looking for doesn’t exist or may have moved.
         </p>
         <div className="mt-8 flex items-center justify-center gap-3">
@@ -33,4 +32,3 @@ export default function NotFound() {
     </div>
   );
 }
-

@@ -2,20 +2,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Loading() {
   return (
-    <div className="mx-auto max-w-6xl px-8 py-14">
+    <div className="mx-auto max-w-6xl px-6 md:px-8 py-10 md:py-14">
       <div className="space-y-10">
+        {/* Section 1 */}
         <div className="space-y-4">
-          <Skeleton className="h-7 w-72 rounded-md" />
-          <div className="grid items-stretch gap-7 lg:grid-cols-2 xl:grid-cols-3">
-            <CardSkeleton />
-            <CardSkeleton />
-            <CardSkeleton className="hidden lg:block" />
+          {/* Hide card grid on mobile; show only on md+ */}
+          <div className="hidden md:grid items-stretch gap-7 lg:grid-cols-2 xl:grid-cols-3">
+        
           </div>
+          {/* Mobile minimal placeholder */}
+          <div className="md:hidden text-center text-sm text-zinc-500">Loading jobs…</div>
         </div>
 
+        {/* Section 2 */}
         <div className="space-y-4">
-          <Skeleton className="h-7 w-[28rem] rounded-md" />
-          <div className="grid items-stretch gap-7 lg:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="h-7 w-64 md:w-[28rem] rounded-md" />
+          <div className="hidden md:grid items-stretch gap-7 lg:grid-cols-2 xl:grid-cols-3">
             <CardSkeleton />
             <CardSkeleton />
             <CardSkeleton className="hidden lg:block" />
@@ -41,4 +43,3 @@ function CardSkeleton({ className = "" }: { className?: string }) {
     </div>
   );
 }
-

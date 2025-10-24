@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { createUserRecord } from "@/app/actions/auth";
-import type { EmailOtpType } from "@supabase/supabase-js";
+import { PUBLIC_APP_URL } from "@/lib/config";
+import { prisma } from "@/utils/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -10,30 +11,21 @@ export async function GET(request: Request) {
 
     try {
         const code = requestUrl.searchParams.get("code");
-        const tokenHash = requestUrl.searchParams.get("token_hash");
+        const next = requestUrl.searchParams.get("next");
         const supabase = await createClient();
 
-        let error: { message: string } | null = null;
-
-        if (code) {
-            const { error: exError } = await supabase.auth.exchangeCodeForSession(code);
-            error = exError;
-        } else if (tokenHash) {
-            const { error: verifyError } = await supabase.auth.verifyOtp({
-                token_hash: tokenHash,
-                type: "magiclink" as EmailOtpType,
-            });
-            error = verifyError ?? null;
-        } else {
+        if (!code) {
             return NextResponse.redirect(
-                `${requestUrl.origin}/auth/auth-code-error?error=no_code`
+                `${PUBLIC_APP_URL}/auth/auth-code-error?error=no_code`
             );
         }
+
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
 
         if (error) {
             console.error("Auth error:", error.message);
             return NextResponse.redirect(
-                `${requestUrl.origin}/auth/auth-code-error?error=${encodeURIComponent(
+                `${PUBLIC_APP_URL}/auth/auth-code-error?error=${encodeURIComponent(
                     error.message
                 )}`
             );
@@ -44,32 +36,53 @@ export async function GET(request: Request) {
             data: { user },
         } = await supabase.auth.getUser();
 
-        // Enforce UWaterloo-only access. If the email domain doesn't match,
-        // immediately sign out and show an error.
         if (user) {
-            const email = (user.email || "").toLowerCase();
-            const isUW = email.endsWith("@uwaterloo.ca");
-            if (!isUW) {
-                await supabase.auth.signOut();
-                return NextResponse.redirect(
-                    `${requestUrl.origin}/auth/auth-code-error?error=Only%20uwaterloo.ca%20emails%20are%20allowed`
-                );
-            }
-            // Create or update user record in our database
             await createUserRecord({
                 userId: user.id,
                 email: user.email || "",
                 fullName: user.user_metadata?.full_name || user.user_metadata?.name,
                 source: user.user_metadata?.source,
             });
+
+            // Create user profile if it doesn't exist - CRITICAL for site stability
+            try {
+                await prisma.userProfile.upsert({
+                    where: { userId: user.id },
+                    update: {}, // No updates needed if exists
+                    create: {
+                        userId: user.id,
+                    }
+                });
+            } catch (error) {
+                console.error("CRITICAL: Failed to create user profile:", error);
+                // Profile creation is essential - if this fails, redirect to error page
+                return NextResponse.redirect(
+                    `${PUBLIC_APP_URL}/auth/auth-code-error?error=${encodeURIComponent(
+                        "profile_creation_failed"
+                    )}`
+                );
+            }
+
+            // If first time (no source captured), send to login to collect it before proceeding
+            try {
+                const dbUser = await prisma.user.findUnique({ where: { id: user.id }, select: { source: true } });
+                if (!dbUser?.source) {
+                    // Preserve the next parameter when collecting source
+                    const redirectUrl = next
+                        ? `${PUBLIC_APP_URL}/login?collectSource=1&next=${encodeURIComponent(next)}`
+                        : `${PUBLIC_APP_URL}/login?collectSource=1&next=/explore`;
+                    return NextResponse.redirect(redirectUrl);
+                }
+            } catch {}
         }
 
-        // Redirect to explore after successful auth
-        return NextResponse.redirect(`${requestUrl.origin}/explore`);
+        // Redirect to the next URL if provided, otherwise explore after successful auth
+        const finalRedirect = next ? `${PUBLIC_APP_URL}${next}` : `${PUBLIC_APP_URL}/explore`;
+        return NextResponse.redirect(finalRedirect);
     } catch (error) {
         console.error("Callback error:", error);
         return NextResponse.redirect(
-            `${requestUrl.origin}/auth/auth-code-error?error=unknown`
+            `${PUBLIC_APP_URL}/auth/auth-code-error?error=unknown`
         );
     }
 }

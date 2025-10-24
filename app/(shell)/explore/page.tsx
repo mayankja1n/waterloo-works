@@ -1,19 +1,23 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ChevronRight } from "lucide-react";
 import { getJobs } from "@/app/actions/jobs";
 import FaviconImage from "@/components/FaviconImage";
 import ShareButton from "@/components/ShareButton";
+import PageHeaderPortal from "@/components/PageHeaderPortal";
 import BookmarkButton from "@/components/BookmarkButton";
 import CreateAlertButton from "@/components/CreateAlertButton";
 import { getRegionAlertMap } from "@/app/actions/alerts";
 import { getBookmarkedJobIds } from "@/app/actions/bookmarks";
 import { formatEmploymentType } from "@/lib/formatEmploymentType";
+import { SectionShimmer } from "@/components/JobShimmers";
 import { timeAgo } from "@/lib/timeAgo";
 
 export const metadata = { title: "Explore" };
 
 export default async function ExplorePage() {
   const jobs = await getJobs();
+  const captureSnippet = `try{window.posthog&&window.posthog.capture('explore_loaded')}catch{}`;
 
   const regions = groupJobsByRegion(jobs);
 
@@ -28,21 +32,74 @@ export default async function ExplorePage() {
 
   const globalAlertActive = Boolean(alertMap.get("ALL"));
 
+  const heroSrc = process.env.NEXT_PUBLIC_EXPLORE_HERO_IMAGE;
+
   return (
-    <div className="mx-auto max-w-6xl px-8 py-14">
-      <h1 className="mb-10 text-3xl font-semibold tracking-tight text-zinc-900">Explore  <div className="mb-8 flex items-center justify-end">
-        <CreateAlertButton region="ALL" initialActive={globalAlertActive} />
-      </div></h1>
-     
+    <>
+      {/* Top hero band with Waterloo building illustration */}
+      <section className="relative h-[42vh] min-h-[280px] w-full overflow-hidden">
+        {heroSrc ? (
+          <Image
+            src={heroSrc}
+            alt="Waterloo building illustration"
+            fill
+            priority
+            className="absolute inset-0 z-0 object-cover object-center"
+          />
+        ) : (
+          <Image
+            src="/hero.png"
+            alt="Waterloo building illustration"
+            fill
+            priority
+            className="absolute inset-0 z-0 object-cover object-center"
+          />
+        )}
+        {/* Tint + fade for smooth transition into content */}
+        <div className="absolute inset-0 z-0 bg-gradient-to-b from-background/60 via-background/30 to-background" />
+
+        {/* Pendulum shimmer (loops) under grid; pivot at top for stronger bottom motion */}
+        <div className="absolute inset-0 z-[8] pointer-events-none overflow-hidden">
+          <div className="ww-pendulum ww-pendulum--force" style={{ ['--pendulum-duration' as any]: '9s', opacity: 0.45 }} />
+          <div className="ww-pendulum ww-pendulum--force" style={{ ['--pendulum-duration' as any]: '13s', opacity: 0.25, ['--pendulum-from' as any]: '-12deg', ['--pendulum-to' as any]: '12deg' }} />
+        </div>
+        {/* Keep grid ticks visible across the hero */}
+        <div className="absolute inset-0 z-10">
+          {/* Using the same utility textures as the shell */}
+          <div className="grid-overlay-vert h-full opacity-40" />
+          <div className="grid-overlay-ticks h-6 opacity-60" />
+        </div>
+      </section>
+
+      <div className="mx-auto max-w-6xl px-4 md:px-8 py-8 md:py-14">
+      <script dangerouslySetInnerHTML={{ __html: captureSnippet }} />
+      {/* Desktop: title + actions in header */}
+      <PageHeaderPortal>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Explore</h1>
+        <div className="hidden md:block">
+          <CreateAlertButton region="ALL" initialActive={globalAlertActive} />
+        </div>
+      </PageHeaderPortal>
+
+      {/* Mobile: title inside page with actions */}
+      <div className="mb-8 md:hidden">
+        <h1 className="mb-6 text-3xl font-semibold tracking-tight text-foreground">Explore</h1>
+        <div className="flex items-center justify-end">
+          <CreateAlertButton region="ALL" initialActive={globalAlertActive} />
+        </div>
+      </div>
 
       {Object.keys(regions).length === 0 ? (
-        <EmptyState />
+        <>
+          <SectionShimmer />
+          <EmptyState />
+        </>
       ) : (
         <div className="space-y-16">
           {Object.entries(regions).map(([region, regionJobs]) => (
             <section key={region} className="space-y-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-medium text-zinc-900">
+                <h2 className="text-2xl font-medium text-foreground">
                   <Link
                     href={
                       region === "Remote"
@@ -54,13 +111,13 @@ export default async function ExplorePage() {
                     {region === "Remote"
                       ? "Job picks for remote software roles"
                       : `Job picks for software developers and engineers in ${region}`}
-                    <ChevronRight className="h-5 w-5 text-zinc-500 transition-transform group-hover:translate-x-0.5" />
+                    <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
                   </Link>
                 </h2>
               </div>
 
-              <div className="grid items-stretch gap-7 lg:grid-cols-2 xl:grid-cols-3">
-                {regionJobs.slice(0, 3).map((job) => (
+              <div className="grid items-stretch gap-0 md:gap-7 sm:grid-cols-2 lg:grid-cols-3">
+                {rankJobs(regionJobs).slice(0, 6).map((job) => (
                   <JobPreviewCard key={job.id} job={job} initialBookmarked={bookmarked.has(job.id)} />)
                 )}
               </div>
@@ -68,8 +125,8 @@ export default async function ExplorePage() {
           ))}
 
           <section className="space-y-3">
-            <div className="font-body text-sm text-zinc-600">
-              Not what you’re looking for? {" "}
+            <div className="font-body text-sm text-muted-foreground">
+              Not what you&apos;re looking for? {" "}
               <a
                 href={dmHref}
                 target="_blank"
@@ -82,13 +139,13 @@ export default async function ExplorePage() {
             </div>
 
             <div className="pt-2">
-              <h3 className="mb-4 text-lg font-medium text-zinc-900">Suggested job searches</h3>
+              <h3 className="mb-4 text-lg font-medium text-foreground">Suggested job searches</h3>
               <div className="flex flex-wrap gap-3">
                 {suggestedSearches.map((s) => (
                   <Link
                     key={s.label}
                     href={{ pathname: "/job-search", query: s.query }}
-                    className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-sm text-zinc-700 shadow-sm hover:bg-zinc-50"
+                    className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-sm text-foreground shadow-sm hover:bg-muted"
                   >
                     <span>🔍</span>
                     <span>{s.label}</span>
@@ -100,6 +157,7 @@ export default async function ExplorePage() {
         </div>
       )}
     </div>
+    </>
   );
 }
 
@@ -156,6 +214,42 @@ function groupJobsByRegion(jobs: Jobs): Record<string, Job[]> {
   return result;
 }
 
+// Lightweight ranking to prioritize relevant engineering roles.
+function rankJobs(jobs: Job[]): Job[] {
+  const now = Date.now();
+  const positive: { pattern: RegExp; weight: number }[] = [
+    { pattern: /(software|engineer|developer)/i, weight: 8 },
+    { pattern: /(full[-\s]?stack)/i, weight: 6 },
+    { pattern: /(frontend|front[-\s]?end)/i, weight: 5 },
+    { pattern: /(backend|back[-\s]?end)/i, weight: 5 },
+    { pattern: /(ml|machine learning|ai)/i, weight: 6 },
+    { pattern: /(data engineer|platform|infrastructure|sre|security)/i, weight: 4 },
+    { pattern: /(ios|android|mobile|web)/i, weight: 3 },
+  ];
+  const negative: { pattern: RegExp; weight: number }[] = [
+    { pattern: /(operations|ops\b|customer|support|sales|marketing)/i, weight: 7 },
+    { pattern: /(researcher|research)/i, weight: 5 },
+    { pattern: /(associate|assistant)/i, weight: 3 },
+  ];
+
+  const score = (j: Job) => {
+    let s = 0;
+    const title = `${j.position} ${j.company}`;
+    for (const r of positive) if (r.pattern.test(title)) s += r.weight;
+    for (const r of negative) if (r.pattern.test(title)) s -= r.weight;
+    // Recency boost: within 45 days gets up to +6
+    const days = Math.max(0, Math.floor((now - new Date(j.createdAt).getTime()) / 86400000));
+    s += Math.max(0, 6 - Math.floor(days / 8));
+    // Full-time slightly preferred
+    if (j.employmentType === "FULL_TIME") s += 2;
+    // Salary presence implies stronger listing
+    if (j.salaryMin || j.salaryMax) s += 1;
+    return s;
+  };
+
+  return [...jobs].sort((a, b) => score(b) - score(a));
+}
+
 function JobPreviewCard({
   job,
   initialBookmarked,
@@ -172,29 +266,31 @@ function JobPreviewCard({
     : undefined;
 
   return (
-    <article className="flex h-full flex-col justify-between rounded-2xl border border-zinc-200 bg-white p-6 min-h-[176px] shadow-sm transition-all hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-md focus-within:ring-1 focus-within:ring-zinc-300">
-      <div className="flex items-start gap-4">
-        <FaviconImage src={job.companyImageUrl} company={job.company} />
+    <article className="relative group flex h-full flex-col justify-between bg-card border-b border-border p-3 md:p-6 md:rounded-2xl md:border md:min-h-[176px] md:shadow-sm md:transition-all md:hover:border-border md:hover:bg-muted md:hover:shadow-md">
+      {/* Full-card interactive overlay for hover and click */}
+      <Link
+        href={{ pathname: "/job-search", query: { selected: job.id } }}
+        aria-label={`${job.company} — ${job.position}`}
+        className="absolute inset-0 z-[10] md:rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+
+      <div className="relative z-0 flex items-start gap-3 md:gap-4">
+        <FaviconImage src={job.companyImageUrl} company={job.company} className="w-9 h-9 md:w-10 md:h-10" />
         <div className="min-w-0">
-          <div className="font-body text-sm text-zinc-600">{job.company}</div>
-          <Link
-            href={{ pathname: "/job-search", query: { selected: job.id } }}
-            className="group block focus-visible:outline-none"
-          >
-            <h3 className="font-title text-lg font-semibold text-zinc-900 group-hover:underline line-clamp-2">
-              {job.position}
-            </h3>
-          </Link>
-          <div className="font-body text-[15px] text-zinc-700">
+          <div className="font-body text-[13px] text-muted-foreground">{job.company}</div>
+          <h3 className="font-header text-[17px] md:text-lg leading-5 font-semibold text-foreground group-hover:underline line-clamp-2">
+            {job.position}
+          </h3>
+          <div className="font-body text-[13px] md:text-[15px] text-foreground">
             {compText ? `${compText} · ` : ""}{formatEmploymentType(job.employmentType)}
           </div>
-          <div className="font-body text-sm text-zinc-500 mt-1">
+          <div className="font-body text-[12px] text-muted-foreground mt-1">
             {job.location}
             {" · "}
             {timeAgo(job.createdAt)}
           </div>
         </div>
-        <div className="ml-auto">
+        <div className="relative z-[20] ml-auto">
           <BookmarkButton jobId={job.id} initial={initialBookmarked} />
         </div>
       </div>
@@ -205,9 +301,9 @@ function JobPreviewCard({
 function EmptyState() {
   return (
     <div className="text-center py-20">
-      <div className="inline-block h-16 w-16 rounded-full bg-zinc-100 mb-4" />
-      <h3 className="font-title text-xl text-zinc-900 mb-2">No listings yet</h3>
-      <p className="font-body text-zinc-600">Check back soon for fresh roles.</p>
+      <div className="inline-block h-16 w-16 rounded-full bg-muted mb-4" />
+      <h3 className="font-header text-xl text-foreground mb-2">No listings yet</h3>
+      <p className="font-body text-muted-foreground">Check back soon for fresh roles.</p>
     </div>
   );
 }

@@ -1,9 +1,11 @@
 "use client";
 
 import posthog from 'posthog-js';
-import { useEffect, useMemo, useState, useCallback, useDeferredValue } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useDeferredValue } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from "@/components/ui/drawer";
 import { ChevronDown, Search, X } from "lucide-react";
 import {
   DropdownMenu,
@@ -22,6 +24,11 @@ import { fuseOptions, type SearchDoc } from "@/lib/search/fuseConfig";
 import { normalizeJob } from "@/lib/search/normalize";
 import BookmarkButton from "@/components/BookmarkButton";
 import { useBookmarkedIds } from "@/hooks/useBookmarks";
+import EmptyState from "@/components/EmptyState";
+import { VoiceNotePlayer } from "@/components/VoiceNotePlayer";
+import { JobSearchOnboardingTour } from "@/components/JobSearchOnboardingTour";
+import { useSession } from "@/providers/SessionProvider";
+import Markdown from "react-markdown";
 
 type Job = Awaited<ReturnType<typeof import("@/app/actions/jobs").getJobs>>[number];
 
@@ -34,6 +41,64 @@ export default function JobSearchClient({ jobs }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
+  const { user, loading } = useSession();
+
+  // Mobile drawer for job details (breakpoint detected on client)
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 767px)").matches
+      : true
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // Job search onboarding tour logic
+  const [mounted, setMounted] = useState(false);
+  const [showJobSearchTour, setShowJobSearchTour] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted || !user || loading) return;
+
+    // Check for force flag
+    const forceOnboarding = sp?.get('onboarding') === 'forced';
+    const tourKey = `job-search-tour-dismissed-${user.id}`;
+    const hasSeenTour = localStorage.getItem(tourKey);
+
+    // Debug logging (can be removed later)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[JobSearch Onboarding]', {
+        forceOnboarding,
+        hasSeenTour,
+        tourKey,
+        userId: user.id,
+      });
+    }
+
+    if (forceOnboarding) {
+      // Show immediately when forced, regardless of localStorage
+      setShowJobSearchTour(true);
+      return;
+    }
+
+    if (!hasSeenTour) {
+      // Show tour after a short delay for better UX
+      const timer = setTimeout(() => {
+        setShowJobSearchTour(true);
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [mounted, user, loading, sp]);
 
   const selectedParam = sp.get("selected") || undefined;
   // Local filter state for snappy client-side updates
@@ -112,21 +177,21 @@ export default function JobSearchClient({ jobs }: Props) {
   }, [filtered, dq]);
 
   // Keep "selected" local for instant switching; sync to URL without RSC refresh.
-  const [selectedId, setSelectedId] = useState<string | undefined>(selectedParam);
+  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   useEffect(() => {
-    // Initialize from URL param on first render or when user lands on a deep link
-    if (selectedParam && selectedParam !== selectedId) {
+    // Respect URL-selected job only on desktop (avoid auto-opening drawer on mobile)
+    if (!isMobile && selectedParam && selectedParam !== selectedId) {
       setSelectedId(selectedParam);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedParam]);
+  }, [selectedParam, isMobile]);
 
-  // Ensure selection is valid against current results
+  // Ensure selection is valid against current results (do not auto-select on mobile)
   useEffect(() => {
     if (!results.length) return setSelectedId(undefined);
-    if (!selectedId || !results.some((j) => j.id === selectedId)) {
-      setSelectedId(results[0]?.id);
-      quietlySyncSelected(results[0]?.id);
+    if (selectedId && !results.some((j) => j.id === selectedId)) {
+      setSelectedId(undefined);
+      quietlySyncSelected(undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [results]);
@@ -154,42 +219,132 @@ export default function JobSearchClient({ jobs }: Props) {
     }
   };
 
+
+  const drawerRef = React.useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (isMobile && selectedJob && drawerRef.current) {
+      // Reset scroll to top when opening a job in the drawer
+      drawerRef.current.scrollTop = 0;
+    }
+  }, [isMobile, selectedJob]);
+
   return (
-    <div className="flex h-[calc(100svh-0px)] flex-col">
-      <Header
-        tab={tab}
-        q={q}
-        selectedTypes={selectedTypes}
-        selectedLocs={selectedLocs}
-        remote={remote}
-        savedCount={bookmarkedIds.size}
-        onChange={(next) => {
-          if (typeof next.tab !== "undefined") setTabState(next.tab);
-          if (Object.prototype.hasOwnProperty.call(next, "q")) setQ(next.q || "");
-          if (Object.prototype.hasOwnProperty.call(next, "type")) setTypeCsv(next.type || "");
-          if (Object.prototype.hasOwnProperty.call(next, "loc")) setLocCsv(next.loc || "");
-          if (Object.prototype.hasOwnProperty.call(next, "remote")) setRemote(next.remote === "true");
-          quietlySyncQuery(next);
+    <>
+      <div className="flex h-[calc(100svh-0px)] flex-col" suppressHydrationWarning>
+        <Header
+          tab={tab}
+          q={q}
+          selectedTypes={selectedTypes}
+          selectedLocs={selectedLocs}
+          remote={remote}
+          savedCount={bookmarkedIds.size}
+          onChange={(next) => {
+            if (typeof next.tab !== "undefined") setTabState(next.tab);
+            if (Object.prototype.hasOwnProperty.call(next, "q")) setQ(next.q || "");
+            if (Object.prototype.hasOwnProperty.call(next, "type")) setTypeCsv(next.type || "");
+            if (Object.prototype.hasOwnProperty.call(next, "loc")) setLocCsv(next.loc || "");
+            if (Object.prototype.hasOwnProperty.call(next, "remote")) setRemote(next.remote === "true");
+            quietlySyncQuery(next);
+            // Ensure filters/search interactions do not open or keep the drawer open on mobile
+            if (isMobile) {
+              setSelectedId(undefined);
+              quietlySyncSelected(undefined);
+            }
+          }}
+        />
+        {/* Mobile: list only (default SSR) */}
+        {(mounted ? isMobile : true) && (
+          <div className="flex min-h-0 flex-1 md:hidden">
+            <div className="flex h-full w-full shrink-0 flex-col border-r border-border bg-background">
+              <ResultsList
+                jobs={results}
+                bookmarkedIds={bookmarkedIds}
+                selectedId={selectedJob?.id}
+                onSelect={onSelect}
+              />
+            </div>
+          </div>
+        )}
+        {/* Desktop: resizable split (client-only) */}
+        {mounted && !isMobile && (
+        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1 bg-background">
+          <ResizablePanel defaultSize={34} minSize={22} maxSize={50} className="min-w-[220px] border-r border-border">
+            <div className="flex h-full flex-col">
+              <ResultsList
+                jobs={results}
+                bookmarkedIds={bookmarkedIds}
+                selectedId={selectedJob?.id}
+                onSelect={onSelect}
+              />
+            </div>
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel defaultSize={66} minSize={40} className="min-w-0">
+            <div className="h-full overflow-y-auto">
+              {selectedJob ? (
+                <JobDetail job={selectedJob} initialSaved={bookmarkedIds.has(selectedJob.id)} />
+              ) : results.length === 0 ? (
+                <EmptyState
+                  title="No jobs found"
+                  message="Try adjusting your filters or search terms to see more results."
+                  showFeedback={true}
+                />
+              ) : (
+                <div className="m-auto p-8 text-center text-muted-foreground">Select a job to view details</div>
+              )}
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      )}
+
+      {/* Mobile Drawer: opens when a job is selected */}
+      <Drawer
+        open={isMobile && !!selectedJob}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedId(undefined);
+            quietlySyncSelected(undefined);
+          }
         }}
-      />
-      <div className="flex min-h-0 flex-1">
-        <div className="flex h-full w-[260px] md:w-[280px] lg:w-[300px] shrink-0 flex-col border-r border-zinc-200 bg-white">
-          <ResultsList
-            jobs={results}
-            bookmarkedIds={bookmarkedIds}
-            selectedId={selectedJob?.id}
-            onSelect={onSelect}
-          />
-        </div>
-        <div className="flex min-w-0 flex-1 bg-white">
-          {selectedJob ? (
-            <JobDetail job={selectedJob} initialSaved={bookmarkedIds.has(selectedJob.id)} />
-          ) : (
-            <div className="m-auto p-8 text-center text-zinc-500">No results</div>
+      >
+        <DrawerContent>
+          {selectedJob && (
+            <div ref={drawerRef} className="w-full -mb-2 pb-2">
+              <DrawerHeader className="flex items-center justify-between">
+                <DrawerTitle className="font-header text-lg text-foreground truncate pr-4">
+                  {selectedJob.position}
+                </DrawerTitle>
+                <DrawerClose asChild>
+                  <button type="button" className="rounded-full border border-input bg-background px-3 py-1.5 text-sm text-foreground hover:bg-muted">Close</button>
+                </DrawerClose>
+              </DrawerHeader>
+              <div className="overflow-y-auto flex-1">
+                <JobDetail job={selectedJob} initialSaved={bookmarkedIds.has(selectedJob.id)} />
+              </div>
+            </div>
           )}
-        </div>
+        </DrawerContent>
+      </Drawer>
       </div>
-    </div>
+
+      {/* Job Search Onboarding Tour */}
+      {showJobSearchTour && (
+        <JobSearchOnboardingTour
+          onCompleted={() => {
+            // Hide the tour immediately
+            setShowJobSearchTour(false);
+
+            // Remove onboarding parameter from URL if present
+            const newSearchParams = new URLSearchParams(sp?.toString());
+            newSearchParams.delete('onboarding');
+            const newUrl = newSearchParams.toString()
+              ? `${pathname}?${newSearchParams.toString()}`
+              : pathname;
+            router.replace(newUrl || pathname || '/job-search');
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -221,59 +376,47 @@ function Header({
   };
 
   return (
-    <div className="border-b border-zinc-200 p-3">
+    <div className="border-b border-border p-3">
       {/* Desktop title + tabs */}
       <div className="mb-3 hidden items-end justify-between md:flex">
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">Jobs</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Jobs</h1>
         <nav className="flex items-center gap-6">
           <button
             onClick={() => setTab("search")}
             className={
               "pb-1 text-sm font-medium tracking-wide " +
-              (tab === "search" ? "border-b-2 border-zinc-900" : "border-b-2 border-transparent hover:border-zinc-300")
+              (tab === "search" ? "border-b-2 border-foreground" : "border-b-2 border-transparent hover:border-muted-foreground")
             }
           >
             Search
           </button>
-        
+
         </nav>
       </div>
 
-      {/* Mobile pills for tabs */}
-      <div className="mb-3 flex items-center gap-2 md:hidden">
-        <button
-          onClick={() => setTab("search")}
-          className={
-            "rounded-full px-3 py-1.5 text-sm " +
-            (tab === "search" ? "bg-zinc-900 text-white" : "border border-zinc-200 bg-white text-zinc-700")
-          }
-        >
-          Search
-        </button>
-      
-      </div>
+
 
       {/* Single-row toolbar (desktop). Will wrap on small screens. */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Search input first; grows to fill row */}
-        <div className="relative min-w-[220px] flex-1 md:flex-none md:w-[520px] lg:w-[560px]">
+        <div className="relative min-w-[220px] flex-1 md:flex-none md:w-[520px] lg:w-[560px]" data-tour="search-input">
           <input
             type="text"
             value={q}
             placeholder="Search jobs"
             onChange={(e) => onChange({ q: e.target.value || undefined })}
-            className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-4 pr-12 text-sm outline-none focus:ring-2 focus:ring-zinc-300"
+            className="w-full rounded-xl border border-input bg-background py-2 pl-4 pr-12 text-base md:text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
           />
           {q && (
             <button
               aria-label="Clear search"
-              className="absolute right-9 top-1/2 -translate-y-1/2 rounded-md p-1 text-zinc-500 hover:bg-zinc-100"
+              className="absolute right-9 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:bg-muted"
               onClick={() => onChange({ q: undefined })}
             >
               <X className="h-4 w-4" />
             </button>
           )}
-          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500">
+          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
             <Search className="h-4 w-4" />
           </div>
         </div>
@@ -281,9 +424,9 @@ function Header({
         {/* Location dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm hover:bg-zinc-50">
+            <button className="inline-flex items-center gap-2 rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm hover:bg-muted" data-tour="filters">
               <span>Location</span>
-              <ChevronDown className="h-4 w-4 text-zinc-500" />
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
@@ -324,7 +467,7 @@ function Header({
               posthog.capture('job_search_filters_cleared');
               onChange({ q: undefined, type: "", loc: "", remote: "" });
             }}
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 shadow-sm hover:bg-zinc-50"
+            className="rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm hover:bg-muted"
           >
             Clear
           </button>
@@ -337,7 +480,6 @@ function Header({
 const typeChips = [
   { value: "FULL_TIME", label: "Full-time job" },
   { value: "INTERNSHIP", label: "Internship" },
-  { value: "PART_TIME", label: "Part time" },
   { value: "CONTRACT", label: "Contract" },
 ];
 
@@ -354,8 +496,8 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
       className={
         "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm " +
         (active
-          ? "bg-zinc-900 text-white"
-          : "border border-zinc-200 bg-white text-zinc-700")
+          ? "bg-primary text-primary-foreground"
+          : "border border-input bg-background text-foreground")
       }
     >
       {label}
@@ -363,7 +505,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   );
 }
 
-function ResultsList({ 
+function ResultsList({
   jobs,
   bookmarkedIds,
   selectedId,
@@ -390,25 +532,23 @@ function ResultsList({
           }}
           data-selected={selectedId === j.id}
           className={
-            "w-full cursor-pointer border-b border-zinc-100 px-3 py-4 text-left transition-colors outline-none focus-visible:ring-1 focus-visible:ring-zinc-300 " +
-            (selectedId === j.id ? "bg-zinc-50" : "hover:bg-zinc-50")
+            "w-full cursor-pointer border-b border-border px-3 py-3 md:py-4 text-left transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring " +
+            (selectedId === j.id ? "bg-muted" : "hover:bg-muted")
           }
         >
           <div className="flex items-start gap-3">
-            <FaviconImage src={j.companyImageUrl} company={j.company} />
+            <FaviconImage src={j.companyImageUrl} company={j.company} className="w-9 h-9 md:w-10 md:h-10" />
             <div className="min-w-0 flex-1">
-              <div className="font-body text-sm text-zinc-600">{j.company}</div>
-              <div className="font-title text-lg font-semibold text-zinc-900">{j.position}</div>
-              <div className="font-body text-[15px] text-zinc-700">
+              <div className="font-body text-[13px] text-muted-foreground">{j.company}</div>
+              <div className="font-header text-[17px] md:text-lg font-semibold leading-5 text-foreground">{j.position}</div>
+              <div className="font-body text-[13px] md:text-[15px] text-foreground">
                 {j.salaryMin && j.salaryMax ? `${j.salaryMin} - ${j.salaryMax} · ` : ""}
                 {formatEmploymentType(j.employmentType)}
               </div>
-          
-              <div className="font-body text-sm text-zinc-500 mt-1">
-                {j.location} · {timeAgo(j.createdAt)}
-              </div>
+
+              <div className="font-body text-[12px] text-muted-foreground mt-1">{j.location} · {timeAgo(j.createdAt)}</div>
             </div>
-            <div onClick={(e) => e.stopPropagation()} className="ml-auto">
+            <div onClick={(e) => e.stopPropagation()} className="ml-auto" data-tour="bookmark-button">
               <BookmarkButton jobId={j.id} initial={bookmarkedIds.has(j.id)} />
             </div>
           </div>
@@ -433,9 +573,9 @@ function JobDetail({ job, initialSaved }: { job: Job; initialSaved: boolean }) {
         <div className="flex items-start gap-4">
           <FaviconImage src={job.companyImageUrl} company={job.company} />
           <div>
-            <div className="font-body text-sm text-zinc-600">{job.company}</div>
-            <h1 className="font-title text-2xl font-semibold text-zinc-900">{job.position}</h1>
-            <div className="font-body text-[15px] text-zinc-700">
+            <div className="font-body text-sm text-muted-foreground">{job.company}</div>
+            <h1 className="font-header text-2xl font-semibold text-foreground">{job.position}</h1>
+            <div className="font-body text-[15px] text-foreground">
               {compText ? `${compText} · ` : ""}
               {formatEmploymentType(job.employmentType)}
             </div>
@@ -447,14 +587,47 @@ function JobDetail({ job, initialSaved }: { job: Job; initialSaved: boolean }) {
         </div>
       </div>
 
-
-      {job.notes && (
-        <div className="mt-6 space-y-2">
-          <p className="font-body whitespace-pre-wrap text-[15px] text-zinc-700">{job.notes}</p>
+      {job.contactUrl && (
+        <div className="mb-6" data-tour="apply-button">
+          <a
+            href={job.contactUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => {
+              posthog.capture('job_apply_clicked', {
+                job_id: job.id,
+                job_position: job.position,
+                job_company: job.company,
+              });
+            }}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+          >
+            {job.contact || "Apply Now"}
+          </a>
         </div>
       )}
 
-      <div className="mt-8 border-t border-zinc-200 pt-4 text-sm text-zinc-500 font-body">
+      {job.notes && (
+        <div className="mt-6 prose prose-sm max-w-none dark:prose-invert prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-ul:text-foreground prose-ol:text-foreground prose-li:text-foreground prose-a:text-primary hover:prose-a:text-primary/80 prose-code:text-foreground prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-muted prose-pre:text-foreground prose-blockquote:text-muted-foreground prose-blockquote:border-l-primary">
+          <Markdown>{job.notes}</Markdown>
+        </div>
+      )}
+
+      {job.voiceNoteUrl && (
+        <div className="mt-8">
+          <h3 className="font-semibold text-foreground mb-4 text-lg">
+            🎙️ Message from the Hiring Team
+          </h3>
+          <VoiceNotePlayer
+            url={job.voiceNoteUrl}
+            authorName={job.company}
+            context="employer_intro"
+            jobId={job.id}
+          />
+        </div>
+      )}
+
+      <div className="mt-8 border-t border-border pt-4 text-sm text-muted-foreground font-body">
         Posted {timeAgo(job.createdAt)}
         {job.poster && (
           <> · by {job.poster.fullName || job.poster.email.split("@")[0]}</>

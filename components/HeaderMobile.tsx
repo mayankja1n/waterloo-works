@@ -27,36 +27,23 @@ export default async function HeaderMobile() {
   })();
 
   return (
-    <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center justify-between border-b border-zinc-200 bg-white/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-white/80 md:hidden">
-      <MobileNav />
+    <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center justify-between border-b border-zinc-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/70 md:hidden dark:border-zinc-800 dark:bg-zinc-900/80 dark:supports-[backdrop-filter]:bg-zinc-900/70" style={{ paddingLeft: 'max(1rem, env(safe-area-inset-left))', paddingRight: 'max(1rem, env(safe-area-inset-right))' }}>
+      <div className="flex-shrink-0">
+        <MobileNav />
+      </div>
       <div className="absolute left-1/2 -translate-x-1/2">
-        <Link href="/explore" className="text-base font-serif italic text-zinc-900">
-          waterloo[dot]works
+        <Link href="/explore" className="text-base font-header italic text-zinc-900 dark:text-zinc-100">
+          waterloo.app
         </Link>
       </div>
       {user ? (
-        <div className="relative group ml-auto">
-          <button className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-[#F5F1E8] text-sm font-medium hover:bg-zinc-800 transition-colors" aria-label="User menu">
-            {initials}
-          </button>
-          <div className="invisible absolute right-0 z-50 mt-3 w-56 rounded-2xl border border-zinc-200 bg-white opacity-0 shadow-sm transition-all duration-200 group-hover:visible group-hover:opacity-100">
-            <div className="py-3">
-              <div className="border-b border-zinc-200 px-5 py-3">
-                <p className="truncate text-sm font-medium text-zinc-900">{user.user_metadata?.full_name || user.email}</p>
-                <p className="mt-0.5 truncate text-xs text-zinc-600">{user.email}</p>
-              </div>
-              <form action={handleSignOut} className="border-t border-zinc-200 pt-2">
-                <button type="submit" className="flex w-full items-center gap-3 px-5 py-2.5 text-left text-sm text-zinc-900 transition-colors hover:bg-zinc-50">
-                  <span>Sign out</span>
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
+        <div className="ml-auto flex-shrink-0" />
       ) : (
-        <Link href="/login" className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm text-zinc-900 hover:bg-zinc-50">
-          Sign in
-        </Link>
+        <div className="ml-auto flex-shrink-0">
+          <Link href="/login" className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800">
+            Sign in
+          </Link>
+        </div>
       )}
     </header>
   );
